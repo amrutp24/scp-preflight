@@ -6,7 +6,7 @@ exactly as it happened. Errors are verbatim. Nothing here is paraphrased.
 Ordinary mistakes of my own are not here. Everything below is service or SDK
 behaviour you can hit yourself.
 
-Python 3.12, `us-east-1`, 1 and 2 August 2026. Versions are given per entry where
+Python 3.13.2, `us-east-1`, 1 and 2 August 2026. Versions are given per entry where
 they matter.
 
 ---
