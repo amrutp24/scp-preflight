@@ -1,0 +1,69 @@
+# Tag guardrails, and the trap that comes with them.
+#
+# Two SCPs, both conditional, but the conditions behave differently when a key is
+# absent. require-team-tag uses Null, where absence is the thing being tested.
+# iam-is-platform-only uses StringNotEquals on a principal tag, where absence
+# silently makes the deny fire.
+#
+# The simulator does not warn you about the second one. It reports
+# MissingContextValues for condition keys in identity policies and says nothing
+# about condition keys in the SCP hierarchy, so you get a confident explicitDeny
+# that flips to allowed the moment you supply the tag. scp-preflight reads the
+# policies and tells you which keys you left out. See SHARP-EDGES.md entry 4.
+#
+# Run:  scp-preflight examples/tag-enforcement/preflight.yaml
+
+version: 1
+
+hierarchy:
+  - name: root
+    policies: []
+  - name: ou-workloads
+    policies:
+      - guardrails/require-team-tag.json
+      - guardrails/iam-is-platform-only.json
+  - name: account
+    policies: []
+
+principals:
+  - name: platform
+    policies:
+      - principals/platform-role.json
+
+tests:
+  - name: tagged resource creation is allowed
+    principal: platform
+    actions: [s3:CreateBucket]
+    resources: ["*"]
+    context:
+      aws:RequestTag/team: platform
+      aws:PrincipalTag/team: platform
+    expect: allowed
+
+  # No aws:RequestTag/team here on purpose. The Null operator is asserting that
+  # the tag is absent, so leaving it out is the test, not an omission.
+  - name: untagged resource creation is blocked
+    principal: platform
+    actions: [s3:CreateBucket]
+    resources: ["*"]
+    context:
+      aws:PrincipalTag/team: platform
+    expect: explicitDeny
+
+  - name: the platform team can manage roles
+    principal: platform
+    actions: [iam:CreateRole]
+    resources: ["arn:aws:iam::123456789012:role/anything"]
+    context:
+      aws:PrincipalTag/team: platform
+      aws:RequestTag/team: platform
+    expect: allowed
+
+  - name: everyone else cannot manage roles
+    principal: platform
+    actions: [iam:CreateRole]
+    resources: ["arn:aws:iam::123456789012:role/anything"]
+    context:
+      aws:PrincipalTag/team: payments
+      aws:RequestTag/team: payments
+    expect: explicitDeny

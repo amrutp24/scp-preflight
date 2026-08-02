@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scp-preflight"
+version = "0.1.0"
+description = "Test AWS service control policies against your workloads before you attach them"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Amrut Pagidipally" }]
+keywords = ["aws", "iam", "scp", "organizations", "guardrails", "policy", "ci"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+
+# The SCP hierarchy parameter (OrderedOrganizationPolicyInputList) landed in
+# botocore 1.43.60, released 2026-07-31. Older versions do not merely ignore it,
+# they reject the call with ParamValidationError. See SHARP-EDGES.md entry 1.
+dependencies = [
+    "botocore>=1.43.60",
+    "boto3>=1.43.60",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+scp-preflight = "scp_preflight.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/amrutp24/scp-preflight"
+Issues = "https://github.com/amrutp24/scp-preflight/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scp_preflight"]

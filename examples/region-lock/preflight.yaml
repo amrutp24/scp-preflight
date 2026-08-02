@@ -1,0 +1,67 @@
+# Region lock guardrail.
+#
+# Denies everything outside the approved regions, except the global services that
+# have no meaningful region. The carve-out is the part people get wrong: without
+# it, a region lock stops you creating IAM roles and your deploys break in a way
+# that looks nothing like a region problem.
+#
+# Run:  scp-preflight examples/region-lock/preflight.yaml
+
+version: 1
+
+# Ordered root first, account last. FullAWSAccess is injected into every level
+# for you, because the simulator does not add it the way Organizations does.
+hierarchy:
+  - name: root
+    policies: []
+  - name: ou-workloads
+    policies:
+      - guardrails/region-lock.json
+  - name: account
+    policies: []
+
+principals:
+  - name: app-deploy
+    policies:
+      - principals/app-deploy.json
+
+defaults:
+  context:
+    aws:RequestedRegion: us-east-1
+
+tests:
+  - name: deploys work in an approved region
+    principal: app-deploy
+    actions:
+      - lambda:CreateFunction
+      - s3:CreateBucket
+    resources: ["*"]
+    context:
+      aws:RequestedRegion: us-east-1
+    expect: allowed
+
+  - name: the second approved region also works
+    principal: app-deploy
+    actions: [lambda:CreateFunction]
+    resources: ["*"]
+    context:
+      aws:RequestedRegion: eu-west-1
+    expect: allowed
+
+  - name: an unapproved region is blocked
+    principal: app-deploy
+    actions: [lambda:CreateFunction]
+    resources: ["*"]
+    context:
+      aws:RequestedRegion: ap-south-1
+    expect: explicitDeny
+
+  # This is the case the carve-out exists for. IAM is global, so a region lock
+  # that forgets to exempt it breaks role creation everywhere.
+  - name: global services stay reachable from any region
+    principal: app-deploy
+    actions: [iam:CreateRole]
+    resources: ["arn:aws:iam::123456789012:role/app-worker"]
+    context:
+      aws:RequestedRegion: ap-south-1
+    expect: allowed

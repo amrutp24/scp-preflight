@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      # The unit tests do not call AWS, so this job needs no credentials and
+      # costs nothing. The simulator itself is exercised in examples/, which
+      # needs a role and is not run here.
+      - name: Test
+        run: pytest -q
+
+      - name: Check the examples parse
+        run: |
+          python - <<'PY'
+          from scp_preflight.spec import load
+          for path in ("examples/region-lock/preflight.yaml",
+                       "examples/tag-enforcement/preflight.yaml"):
+              spec = load(path)
+              print(f"{path}: {len(spec.cases)} tests, {len(spec.hierarchy)} levels")
+          PY

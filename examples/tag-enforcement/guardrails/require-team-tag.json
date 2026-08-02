@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyCreateWithoutTeamTag",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "s3:CreateBucket",
+        "rds:CreateDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/team": "true"
+        }
+      }
+    }
+  ]
+}

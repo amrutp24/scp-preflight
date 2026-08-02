@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PlatformAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "s3:CreateBucket",
+        "ec2:RunInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

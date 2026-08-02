@@ -1,0 +1,40 @@
+# Drop this in .github/workflows/ to check your guardrails on every pull request
+# that touches them.
+#
+# The simulator creates nothing and is not billed, so this job costs whatever your
+# CI minutes cost and nothing more. The role it assumes needs exactly one
+# permission, iam:SimulateCustomPolicy. It does not need Organizations access and
+# it does not need to be in the management account.
+
+name: guardrail-preflight
+
+on:
+  pull_request:
+    paths:
+      - "guardrails/**"
+      - "preflight.yaml"
+
+permissions:
+  id-token: write # for OIDC
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install scp-preflight
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PREFLIGHT_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # Exits 1 on a failed check, which fails the job and blocks the merge.
+      - name: Preflight guardrails
+        run: scp-preflight preflight.yaml
