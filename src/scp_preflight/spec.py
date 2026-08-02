@@ -198,6 +198,20 @@ def load(path: str | Path) -> Spec:
         if isinstance(actions, str):
             actions = [actions]
 
+        # The API accepts a wildcard action name, does not expand it, and returns a
+        # single result for a literal action of that name. A guardrail denying one
+        # action in the service is invisible: s3:DeleteBucket returns explicitDeny
+        # while s3:* returns allowed. Reject it rather than let it give false
+        # confidence. See SHARP-EDGES.md entry 8.
+        wildcards = [a for a in actions if "*" in a or "?" in a]
+        if wildcards:
+            raise SpecError(
+                f"{where}: wildcard action names are not usable: {', '.join(wildcards)}. "
+                "The simulator accepts them without expanding them, so a wildcard "
+                "returns 'allowed' even when a specific action in that service is "
+                "denied. List the actions you care about individually."
+            )
+
         resources = c.get("resources") or ["*"]
         if isinstance(resources, str):
             resources = [resources]

@@ -57,6 +57,25 @@ def test_rejects_too_many_levels(tmp_path):
         load(write_spec(tmp_path, body))
 
 
+def test_rejects_wildcard_action_names(tmp_path):
+    # The API accepts s3:* without expanding it and answers allowed, hiding a deny
+    # on any specific action in that service. Better to refuse the spec.
+    body = MINIMAL.replace("actions: [s3:GetObject]", "actions: ['s3:*']")
+    with pytest.raises(SpecError, match="wildcard action names are not usable"):
+        load(write_spec(tmp_path, body))
+
+
+def test_rejects_single_character_wildcards_too(tmp_path):
+    body = MINIMAL.replace("actions: [s3:GetObject]", "actions: ['s3:GetObjec?']")
+    with pytest.raises(SpecError, match="wildcard action names are not usable"):
+        load(write_spec(tmp_path, body))
+
+
+def test_ordinary_action_names_are_fine(tmp_path):
+    spec = load(write_spec(tmp_path, MINIMAL))
+    assert spec.cases[0].actions == ["s3:GetObject"]
+
+
 def test_missing_policy_file_names_the_path(tmp_path):
     body = MINIMAL.replace("- app.json", "- nope.json")
     with pytest.raises(SpecError, match="policy file not found"):

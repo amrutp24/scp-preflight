@@ -299,7 +299,52 @@ announcement describes both capabilities together as if they compose.
 
 ---
 
-## 7. The feature is unavailable on Python 3.9, and nothing says so
+## 7. A wildcard action name is accepted, not expanded, and answers `allowed`
+
+**What happened.** An identity policy allowing `s3:*`, and an SCP denying exactly
+one action:
+
+```json
+{"Sid": "NoBucketDeletes", "Effect": "Deny", "Action": "s3:DeleteBucket", "Resource": "*"}
+```
+
+Simulated three ways:
+
+```
+s3:DeleteBucket    -> explicitDeny
+s3:CreateBucket    -> allowed
+s3:*               -> allowed
+```
+
+**Cause.** `SimulateCustomPolicy` treats `s3:*` as a literal action name rather than
+a pattern. It returns one result, with `EvalActionName` echoed back as `s3:*`, and
+that result does not reflect the deny on `s3:DeleteBucket`.
+
+**Why it matters.** Anyone testing a guardrail will reach for a wildcard to cover a
+service, because writing out every action is tedious. Doing so returns `allowed`
+and hides every specific deny in that service. The answer is confidently wrong in
+the direction that makes you ship the guardrail.
+
+**Fix.** Enumerate actions individually. `scp-preflight` rejects wildcard action
+names while loading the spec:
+
+```
+error: tests 'deploys work': wildcard action names are not usable: s3:*. The simulator accepts them without expanding them, so a wildcard returns 'allowed' even when a specific action in that service is denied. List the actions you care about individually.
+```
+
+**Do the official docs cover it?** Partially, and inconsistently. The
+`SimulateCustomPolicy` reference says of `ActionNames`: "This operation does not
+support using wildcards (\*) in an action name." The same parameter on
+`SimulatePrincipalPolicy` carries no such sentence. Neither says what happens if
+you pass one, and the answer is not an error but a misleading result. A rejected
+request would be far better than a silent `allowed`.
+
+**Triage:** service gap. Reasonable ask: reject wildcard action names with a
+validation error, or expand them.
+
+---
+
+## 8. The feature is unavailable on Python 3.9, and nothing says so
 
 **What happened.** The first push to GitHub failed CI on the Python 3.9 job. Every
 other version in the matrix passed.

@@ -11,7 +11,7 @@ license = { file = "LICENSE" }
 # botocore 1.43.60, the first release carrying OrderedOrganizationPolicyInputList,
 # requires Python 3.10. The last botocore that supports 3.9 is 1.42.x, which does
 # not have the parameter, so there is no combination that works on 3.9.
-# See SHARP-EDGES.md entry 7.
+# See SHARP-EDGES.md entry 8.
 requires-python = ">=3.10"
 authors = [{ name = "Amrut Pagidipally" }]
 keywords = ["aws", "iam", "scp", "organizations", "guardrails", "policy", "ci"]

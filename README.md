@@ -182,6 +182,27 @@ Exit codes are 0 when every check passed, 1 when a check failed, 2 for a bad spe
 or too old a botocore, and 3 for an AWS error. `--json` gives you machine-readable
 output.
 
+## Coverage is exactly what you write down
+
+The tool checks the actions you list and nothing else. It does not enumerate a
+service, and it cannot tell you a guardrail broke something you did not think to
+test. A green run means the checks you wrote passed, not that the guardrail is
+safe.
+
+You cannot shortcut this with a wildcard. The simulator accepts `s3:*`, does not
+expand it, and returns `allowed` even when a specific action in that service is
+denied:
+
+```
+s3:DeleteBucket    -> explicitDeny
+s3:CreateBucket    -> allowed
+s3:*               -> allowed
+```
+
+Specs with wildcard action names are rejected for that reason. The practical way
+to get real coverage is to build the action list from what your roles actually
+call, which CloudTrail can tell you, rather than from imagination.
+
 ## What this cannot do
 
 There is no single API call that tests a live role against a proposed SCP
