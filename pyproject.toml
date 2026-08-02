@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Test AWS service control policies against your workloads before you attach them"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+# botocore 1.43.60, the first release carrying OrderedOrganizationPolicyInputList,
+# requires Python 3.10. The last botocore that supports 3.9 is 1.42.x, which does
+# not have the parameter, so there is no combination that works on 3.9.
+# See SHARP-EDGES.md entry 7.
+requires-python = ">=3.10"
 authors = [{ name = "Amrut Pagidipally" }]
 keywords = ["aws", "iam", "scp", "organizations", "guardrails", "policy", "ci"]
 classifiers = [
@@ -16,6 +20,10 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
 ]
 

@@ -40,8 +40,11 @@ resource scoping properly. This tool is a thin, opinionated wrapper around that.
 
 ## Requirements
 
-Python 3.9 or newer, and botocore 1.43.60 or newer. The parameter shipped on
-2026-07-31; earlier versions reject the call rather than ignoring the field.
+Python 3.10 or newer, and botocore 1.43.60 or newer. The parameter shipped on
+2026-07-31 and earlier versions reject the call rather than ignoring the field.
+The Python floor comes from botocore: 1.43.60 requires 3.10, and the last botocore
+that runs on 3.9 does not have the parameter, so there is no working combination
+on 3.9.
 
 ```bash
 pip install -U 'botocore>=1.43.60' 'boto3>=1.43.60'
@@ -55,7 +58,9 @@ even read. Simulation creates nothing and is not billed.
 ## Quickstart
 
 ```bash
-pip install scp-preflight
+git clone https://github.com/amrutp24/scp-preflight
+cd scp-preflight
+pip install -e .
 scp-preflight examples/region-lock/preflight.yaml
 ```
 

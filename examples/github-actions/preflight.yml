@@ -28,7 +28,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install scp-preflight
+      # Not on PyPI yet. Pin to a tag or commit rather than main so a guardrail
+      # check cannot change under you between runs.
+      - run: pip install git+https://github.com/amrutp24/scp-preflight@main
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:

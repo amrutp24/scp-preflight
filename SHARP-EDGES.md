@@ -1,11 +1,13 @@
 # Sharp edges
 
-Everything that went wrong while building this, recorded exactly as it happened.
-Errors are verbatim. Nothing here is paraphrased.
+Every place AWS behaved in a way that cost time while building this, recorded
+exactly as it happened. Errors are verbatim. Nothing here is paraphrased.
 
-Environment unless stated otherwise: Windows 11, Python 3.12, `AWS_PROFILE=dev`,
-IAM endpoint in `us-east-1`, account is an Organizations member account with no
-Organizations permissions at all. Date of testing: 2026-08-01.
+Ordinary mistakes of my own are not here. Everything below is service or SDK
+behaviour you can hit yourself.
+
+Python 3.12, `us-east-1`, 1 and 2 August 2026. Versions are given per entry where
+they matter.
 
 ---
 
@@ -297,23 +299,38 @@ announcement describes both capabilities together as if they compose.
 
 ---
 
-## 7. Build error, not an AWS problem
+## 7. The feature is unavailable on Python 3.9, and nothing says so
 
-Recorded for completeness because the rule is that every error goes in this file.
-
-```
-OSError: License file does not exist: LICENSE
-```
-
-then
+**What happened.** The first push to GitHub failed CI on the Python 3.9 job. Every
+other version in the matrix passed.
 
 ```
-OSError: Readme file does not exist: README.md
+ERROR: Ignored the following versions that require a different python version: 1.43.0 Requires-Python >=3.10; ... 1.43.60 Requires-Python >=3.10; 1.43.61 Requires-Python >=3.10; 1.43.62 Requires-Python >=3.10
+ERROR: Could not find a version that satisfies the requirement boto3>=1.43.60 (from scp-preflight)
+ERROR: No matching distribution found for boto3>=1.43.60
 ```
 
-**Cause.** `pyproject.toml` referenced `LICENSE` and `README.md` before either
-existed. Hatchling validates metadata during editable installs.
+**Cause.** The two constraints are mutually exclusive.
 
-**Fix.** Wrote both files. No upstream action, this was my own ordering mistake.
+```
+botocore 1.43.62  requires_python: >=3.10
+botocore 1.43.60  requires_python: >=3.10   <- first release with the parameter
+botocore 1.42.97  requires_python: >=3.9    <- last release supporting 3.9
+```
 
-**Triage:** no upstream action.
+`OrderedOrganizationPolicyInputList` arrived in 1.43.60, and every 1.43.x release
+requires Python 3.10. There is no combination of Python 3.9 and a botocore that has
+the parameter, so conditional SCP simulation is unavailable on 3.9 through any SDK
+version.
+
+**Fix.** `requires-python = ">=3.10"`, and drop 3.9 from the CI matrix. The
+constraint is real, there is nothing to work around.
+
+**Do the official docs cover it?** No. The launch announcement and the API
+reference describe the capability with no reference to an SDK version or a language
+runtime requirement, which is the same omission as entry 1. Anyone still on 3.9
+finds out from a dependency resolver error that mentions neither IAM nor the
+feature.
+
+**Triage:** docs gap. Folded into upstream draft 4, which already covers the
+undocumented minimum SDK version.
