@@ -17,6 +17,15 @@ class SimulatorUnavailable(Exception):
     """The installed botocore predates the SCP hierarchy parameter."""
 
 
+class IncompleteResponse(Exception):
+    """The simulator said there were more results but gave no way to fetch them."""
+
+
+# Not an API decision. Stands in for an action the simulator returned nothing for,
+# so the check fails visibly instead of dropping out of the report.
+NO_RESULT = "noResult"
+
+
 @dataclass
 class Result:
     case: Case
@@ -77,13 +86,50 @@ def _context_entries(case: Case) -> list[dict[str, Any]]:
     ]
 
 
+def _simulate_all_pages(client, request: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Every evaluation result for one request, following Marker to the last page.
+
+    The API pages EvaluationResults, one entry per action and resource pair, so a
+    test with many of either is split across several responses. Reading only the
+    first page drops the rest without any error.
+    """
+    evaluations: list[dict[str, Any]] = []
+    marker = None
+    while True:
+        page_request = dict(request, Marker=marker) if marker else request
+        try:
+            response = client.simulate_custom_policy(**page_request)
+        except ParamValidationError as exc:
+            if "OrderedOrganizationPolicyInputList" in str(exc):
+                raise SimulatorUnavailable(
+                    "This botocore does not know OrderedOrganizationPolicyInputList. "
+                    "It was added in botocore 1.43.60 (2026-07-31). "
+                    "Upgrade with: pip install -U 'botocore>=1.43.60' 'boto3>=1.43.60'"
+                ) from exc
+            raise
+
+        evaluations.extend(response["EvaluationResults"])
+        if not response.get("IsTruncated"):
+            return evaluations
+        marker = response.get("Marker")
+        if not marker:
+            raise IncompleteResponse(
+                "SimulateCustomPolicy reported a truncated response without a Marker, "
+                "so the remaining results cannot be fetched."
+            )
+
+
 def run(spec: Spec, client) -> list[Result]:
     """
     Simulate every case.
 
-    One API call per case, not per action or resource: SimulateCustomPolicy
+    One request per case, not per action or resource: SimulateCustomPolicy
     evaluates the full action x resource matrix in a single request and returns a
-    result per combination.
+    result per combination, paged when there are many.
+
+    An action the simulator returns nothing for still gets a result, with the
+    decision NO_RESULT, so it fails rather than silently disappearing.
     """
     hierarchy = build_hierarchy(spec)
     results: list[Result] = []
@@ -112,18 +158,9 @@ def run(spec: Spec, client) -> list[Result]:
         if entries:
             request["ContextEntries"] = entries
 
-        try:
-            response = client.simulate_custom_policy(**request)
-        except ParamValidationError as exc:
-            if "OrderedOrganizationPolicyInputList" in str(exc):
-                raise SimulatorUnavailable(
-                    "This botocore does not know OrderedOrganizationPolicyInputList. "
-                    "It was added in botocore 1.43.60 (2026-07-31). "
-                    "Upgrade with: pip install -U 'botocore>=1.43.60' 'boto3>=1.43.60'"
-                ) from exc
-            raise
+        evaluations = _simulate_all_pages(client, request)
 
-        for entry in response["EvaluationResults"]:
+        for entry in evaluations:
             results.append(
                 Result(
                     case=case,
@@ -138,5 +175,20 @@ def run(spec: Spec, client) -> list[Result]:
                     ).get("AllowedByOrganizations", True),
                 )
             )
+
+        returned = {entry["EvalActionName"].lower() for entry in evaluations}
+        for action in case.actions:
+            if action.lower() not in returned:
+                results.append(
+                    Result(
+                        case=case,
+                        action=action,
+                        resource=", ".join(case.resources),
+                        decision=NO_RESULT,
+                        matched=[],
+                        missing_context=[],
+                        undeclared_context=undeclared_keys,
+                    )
+                )
 
     return results
