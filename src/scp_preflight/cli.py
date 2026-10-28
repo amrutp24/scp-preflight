@@ -11,7 +11,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from . import __version__
 from .principal import PrincipalError, resolve
 from .report import as_json, text
-from .simulate import SimulatorUnavailable, run
+from .simulate import IncompleteResponse, SimulatorUnavailable, run
 from .spec import SpecError, load
 
 EXIT_OK = 0
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     except SimulatorUnavailable as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_BAD_USAGE
-    except (ClientError, BotoCoreError) as exc:
+    except (ClientError, BotoCoreError, IncompleteResponse) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_AWS_ERROR
 

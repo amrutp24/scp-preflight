@@ -102,6 +102,10 @@ tests:
 `expect` is `allowed`, `explicitDeny`, `implicitDeny`, or `denied` if you do not
 care which kind of deny you got.
 
+Unknown keys are rejected, with a suggestion when one is close. A typo like
+`resource:` for `resources:` would otherwise be ignored and the test would quietly
+run against `*`.
+
 ## Testing a role that actually exists
 
 Instead of writing the identity policies out, point at a live role and its attached

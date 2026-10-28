@@ -45,7 +45,10 @@ class FakeClient:
         if self._error is not None:
             raise self._error
         if self._responses:
-            return self._responses.pop(0)
+            response = self._responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
         return {"EvaluationResults": []}
 
 

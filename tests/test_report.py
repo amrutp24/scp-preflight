@@ -4,6 +4,7 @@ import json
 import pytest
 
 from scp_preflight.report import as_json, text
+from scp_preflight.simulate import NO_RESULT
 
 from .conftest import make_result
 
@@ -95,6 +96,13 @@ def test_scp_deny_says_so_without_inventing_a_policy_name():
 def test_no_match_and_no_organizations_deny():
     out, _ = render([make_result(decision="implicitDeny", expect="allowed")])
     assert "no statement matched" in out
+
+
+def test_an_action_with_no_result_fails_and_says_why():
+    out, count = render([make_result(decision=NO_RESULT, expect="denied")])
+    assert out.startswith("FAIL")
+    assert "the simulator returned no result for this action" in out
+    assert count == 1
 
 
 # --- totals and JSON --------------------------------------------------------

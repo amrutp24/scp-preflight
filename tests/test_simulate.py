@@ -4,7 +4,13 @@ import pytest
 from botocore.exceptions import ParamValidationError
 
 from scp_preflight import FULL_AWS_ACCESS
-from scp_preflight.simulate import SimulatorUnavailable, build_hierarchy, run
+from scp_preflight.simulate import (
+    NO_RESULT,
+    IncompleteResponse,
+    SimulatorUnavailable,
+    build_hierarchy,
+    run,
+)
 from scp_preflight.spec import Level
 
 from .conftest import ALLOW_S3, REGION_LOCK, FakeClient, evaluation, make_spec
@@ -97,6 +103,93 @@ def test_one_call_per_case_not_per_action():
 
     assert len(client.requests) == 1
     assert len(results) == 2
+
+
+# --- paging and missing results --------------------------------------------
+
+
+def test_every_page_is_read():
+    client = FakeClient(
+        [
+            {"EvaluationResults": [evaluation(action="s3:CreateBucket")],
+             "IsTruncated": True, "Marker": "page-2"},
+            {"EvaluationResults": [evaluation(action="s3:PutObject")],
+             "IsTruncated": True, "Marker": "page-3"},
+            {"EvaluationResults": [evaluation(action="s3:DeleteBucket")],
+             "IsTruncated": False},
+        ]
+    )
+    actions = ("s3:CreateBucket", "s3:PutObject", "s3:DeleteBucket")
+    results = run(make_spec(actions=actions), client)
+
+    assert [r.action for r in results] == list(actions)
+    assert all(r.decision != NO_RESULT for r in results)
+
+
+def test_later_pages_carry_the_marker_and_the_same_request():
+    client = FakeClient(
+        [
+            {"EvaluationResults": [evaluation()], "IsTruncated": True, "Marker": "next"},
+            {"EvaluationResults": [evaluation(action="s3:PutObject")]},
+        ]
+    )
+    run(make_spec(actions=("s3:CreateBucket", "s3:PutObject")), client)
+
+    first, second = client.requests
+    assert "Marker" not in first
+    assert second.pop("Marker") == "next"
+    assert second == first
+
+
+def test_a_failure_on_a_later_page_is_not_lost():
+    # The deny that matters is on page two. Reading only page one would pass.
+    client = FakeClient(
+        [
+            {"EvaluationResults": [evaluation(decision="allowed")],
+             "IsTruncated": True, "Marker": "next"},
+            {"EvaluationResults": [evaluation(action="s3:PutObject", decision="explicitDeny")]},
+        ]
+    )
+    results = run(make_spec(actions=("s3:CreateBucket", "s3:PutObject")), client)
+
+    assert [r.passed for r in results] == [True, False]
+
+
+def test_truncated_without_a_marker_is_an_error():
+    client = FakeClient([{"EvaluationResults": [evaluation()], "IsTruncated": True}])
+    with pytest.raises(IncompleteResponse):
+        run(make_spec(), client)
+
+
+def test_a_case_with_no_results_fails_instead_of_vanishing():
+    client = FakeClient([{"EvaluationResults": []}])
+    results = run(make_spec(), client)
+
+    assert len(results) == 1
+    assert results[0].action == "s3:CreateBucket"
+    assert results[0].decision == NO_RESULT
+    assert results[0].passed is False
+
+
+def test_an_action_missing_from_the_results_fails():
+    client = FakeClient([{"EvaluationResults": [evaluation(action="s3:CreateBucket")]}])
+    results = run(make_spec(actions=("s3:CreateBucket", "s3:PutObject")), client)
+
+    assert [(r.action, r.decision) for r in results] == [
+        ("s3:CreateBucket", "allowed"),
+        ("s3:PutObject", NO_RESULT),
+    ]
+
+
+def test_returned_action_names_match_case_insensitively():
+    client = FakeClient([{"EvaluationResults": [evaluation(action="S3:CreateBucket")]}])
+    results = run(make_spec(), client)
+    assert [r.decision for r in results] == ["allowed"]
+
+
+def test_missing_results_never_pass_a_deny_expectation():
+    client = FakeClient([{"EvaluationResults": []}])
+    assert run(make_spec(expect="denied"), client)[0].passed is False
 
 
 # --- result parsing ---------------------------------------------------------
@@ -217,6 +310,17 @@ def test_stale_botocore_gets_an_actionable_error():
     )
     with pytest.raises(SimulatorUnavailable, match="1.43.60"):
         run(make_spec(), FakeClient(error=error))
+
+
+def test_stale_botocore_is_detected_on_a_later_page_too():
+    error = ParamValidationError(
+        report='Unknown parameter in input: "OrderedOrganizationPolicyInputList"'
+    )
+    client = FakeClient(
+        [{"EvaluationResults": [evaluation()], "IsTruncated": True, "Marker": "next"}, error]
+    )
+    with pytest.raises(SimulatorUnavailable):
+        run(make_spec(), client)
 
 
 def test_other_validation_errors_are_not_swallowed():

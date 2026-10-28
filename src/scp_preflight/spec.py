@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,18 @@ from . import MAX_HIERARCHY_LEVELS
 # "either kind of deny", which is what you usually want to assert.
 API_DECISIONS = {"allowed", "explicitDeny", "implicitDeny"}
 EXPECTATIONS = API_DECISIONS | {"denied"}
+
+SPEC_VERSIONS = {1}
+
+# Every key the loader reads, per mapping. Anything else is a typo, and a typo is
+# dangerous here: 'resource:' instead of 'resources:' would quietly test against
+# '*' and pass.
+TOP_LEVEL_KEYS = {"version", "hierarchy", "principals", "defaults", "tests", "inject_full_aws_access"}
+LEVEL_KEYS = {"name", "policies"}
+PRINCIPAL_KEYS = {"name", "policies", "permissions_boundary", "role"}
+DEFAULTS_KEYS = {"context"}
+TEST_KEYS = {"name", "principal", "actions", "resources", "context", "expect"}
+CONTEXT_VALUE_KEYS = {"type", "values"}
 
 CONTEXT_TYPES = {
     "string", "stringList", "numeric", "numericList", "boolean", "booleanList",
@@ -64,6 +77,20 @@ class Spec:
     source: Path | None = None
 
 
+def _check_keys(mapping: dict[str, Any], allowed: set[str], where: str) -> None:
+    unknown = [k for k in mapping if k not in allowed]
+    if not unknown:
+        return
+    described = []
+    for key in unknown:
+        close = difflib.get_close_matches(str(key), allowed, n=1)
+        described.append(f"{key!r} (did you mean {close[0]!r}?)" if close else repr(key))
+    raise SpecError(
+        f"{where}: unknown key{'s' if len(unknown) > 1 else ''} {', '.join(described)}. "
+        f"Valid keys: {', '.join(sorted(allowed))}"
+    )
+
+
 def _read_policy(ref: Any, base: Path, where: str) -> dict[str, Any]:
     """A policy is either an inline dict or a path to a JSON file, relative to the spec."""
     if isinstance(ref, dict):
@@ -95,6 +122,7 @@ def _normalise_context(raw: Any, where: str) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in raw.items():
         if isinstance(value, dict):
+            _check_keys(value, CONTEXT_VALUE_KEYS, f"{where}: context key {key}")
             ctype = value.get("type", "string")
             values = value.get("values")
             if values is None:
@@ -131,6 +159,16 @@ def load(path: str | Path) -> Spec:
     if not isinstance(raw, dict):
         raise SpecError(f"{path}: top level must be a mapping")
 
+    _check_keys(raw, TOP_LEVEL_KEYS, str(path))
+
+    version = raw.get("version", 1)
+    # bool is an int in Python, and True == 1, so rule it out explicitly.
+    if isinstance(version, bool) or version not in SPEC_VERSIONS:
+        raise SpecError(
+            f"{path}: unsupported spec version {version!r}. "
+            f"This scp-preflight understands version {', '.join(map(str, sorted(SPEC_VERSIONS)))}"
+        )
+
     base = path.parent
 
     raw_hierarchy = raw.get("hierarchy")
@@ -148,6 +186,7 @@ def load(path: str | Path) -> Spec:
             raise SpecError(f"{path}: hierarchy[{i}] must be a mapping with 'name' and 'policies'")
         name = level.get("name") or f"level-{i}"
         where = f"{path}: hierarchy[{i}] ({name})"
+        _check_keys(level, LEVEL_KEYS, where)
         policies = [_read_policy(p, base, where) for p in (level.get("policies") or [])]
         hierarchy.append(Level(name=name, policies=policies))
 
@@ -159,6 +198,7 @@ def load(path: str | Path) -> Spec:
         if name in principals:
             raise SpecError(f"{path}: duplicate principal name {name!r}")
         where = f"{path}: principal {name}"
+        _check_keys(p, PRINCIPAL_KEYS, where)
         boundary = p.get("permissions_boundary")
         role = p.get("role")
         if role is not None and not isinstance(role, str):
@@ -175,7 +215,11 @@ def load(path: str | Path) -> Spec:
     if not principals:
         raise SpecError(f"{path}: at least one principal is required")
 
-    defaults = _normalise_context((raw.get("defaults") or {}).get("context"), f"{path}: defaults")
+    raw_defaults = raw.get("defaults") or {}
+    if not isinstance(raw_defaults, dict):
+        raise SpecError(f"{path}: 'defaults' must be a mapping")
+    _check_keys(raw_defaults, DEFAULTS_KEYS, f"{path}: defaults")
+    defaults = _normalise_context(raw_defaults.get("context"), f"{path}: defaults")
 
     cases = []
     for i, c in enumerate(raw.get("tests") or []):
@@ -183,6 +227,7 @@ def load(path: str | Path) -> Spec:
             raise SpecError(f"{path}: tests[{i}] must be a mapping")
         name = c.get("name") or f"test-{i}"
         where = f"{path}: test {name!r}"
+        _check_keys(c, TEST_KEYS, where)
 
         expect = c.get("expect")
         if expect not in EXPECTATIONS:

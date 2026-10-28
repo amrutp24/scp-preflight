@@ -6,7 +6,7 @@ import json
 import sys
 from typing import Iterable
 
-from .simulate import Result
+from .simulate import NO_RESULT, Result
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -32,6 +32,8 @@ def _sources(result: Result) -> str:
     that Organizations refused, not which policy or statement. That is the same
     dead end as the production error message. See SHARP-EDGES.md entry 5.
     """
+    if result.decision == NO_RESULT:
+        return "nothing: the simulator returned no result for this action"
     seen = []
     for statement in result.matched:
         source = statement.get("SourcePolicyId") or "?"

@@ -106,3 +106,76 @@ def test_injection_can_be_turned_off(tmp_path):
     body = MINIMAL.replace("version: 1", "version: 1\ninject_full_aws_access: false")
     spec = load(write_spec(tmp_path, body))
     assert build_hierarchy(spec)[0]["ServiceControlPolicyInputList"] == []
+
+
+# --- unknown keys and version -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "old,new,where,suggestion",
+    [
+        # The one that motivated this: a singular 'resource' used to be ignored, so
+        # the test ran against '*' and could pass.
+        ("    expect: allowed", "    resource: arn:aws:s3:::bucket\n    expect: allowed",
+         "test 'allows the thing'", "resources"),
+        ("    actions: [s3:GetObject]",
+         "    actions: [s3:GetObject]\n    contxt:\n      aws:RequestedRegion: us-east-1",
+         "test 'allows the thing'", "context"),
+        ("version: 1", "version: 1\ntest: []", "preflight.yaml", "tests"),
+        ("version: 1", "version: 1\ninject_full_aws_acess: false", "preflight.yaml",
+         "inject_full_aws_access"),
+        ("  - name: root\n    policies: []", "  - name: root\n    policy: []",
+         "hierarchy[0]", "policies"),
+        ("  - name: app\n", "  - name: app\n    permission_boundary: app.json\n",
+         "principal app", "permissions_boundary"),
+    ],
+)
+def test_rejects_misspelled_keys(tmp_path, old, new, where, suggestion):
+    body = MINIMAL.replace(old, new)
+    assert body != MINIMAL
+    with pytest.raises(SpecError) as caught:
+        load(write_spec(tmp_path, body))
+    message = str(caught.value)
+    assert "unknown key" in message
+    assert where in message
+    assert f"did you mean {suggestion!r}" in message
+
+
+def test_rejects_unknown_keys_in_defaults(tmp_path):
+    body = MINIMAL.replace("tests:", "defaults:\n  contexts: {}\ntests:")
+    with pytest.raises(SpecError, match="defaults: unknown key 'contexts'"):
+        load(write_spec(tmp_path, body))
+
+
+def test_rejects_unknown_keys_in_explicit_context_values(tmp_path):
+    body = MINIMAL.replace(
+        "    expect: allowed",
+        "    context:\n      aws:RequestedRegion: {type: string, value: us-east-1}\n"
+        "    expect: allowed",
+    )
+    with pytest.raises(SpecError, match="context key aws:RequestedRegion: unknown key 'value'"):
+        load(write_spec(tmp_path, body))
+
+
+def test_reports_every_unknown_key_at_once(tmp_path):
+    body = MINIMAL.replace("version: 1", "version: 1\nfoo: 1\nbar: 2")
+    with pytest.raises(SpecError, match="unknown keys 'foo', 'bar'"):
+        load(write_spec(tmp_path, body))
+
+
+def test_unknown_key_with_no_close_match_lists_the_valid_ones(tmp_path):
+    body = MINIMAL.replace("version: 1", "version: 1\nzzzz: 1")
+    with pytest.raises(SpecError, match="Valid keys: defaults, hierarchy"):
+        load(write_spec(tmp_path, body))
+
+
+@pytest.mark.parametrize("version", ["2", "'1'", "true"])
+def test_rejects_unsupported_versions(tmp_path, version):
+    body = MINIMAL.replace("version: 1", f"version: {version}")
+    with pytest.raises(SpecError, match="unsupported spec version"):
+        load(write_spec(tmp_path, body))
+
+
+def test_version_may_be_omitted(tmp_path):
+    body = MINIMAL.replace("version: 1\n", "")
+    assert len(load(write_spec(tmp_path, body)).cases) == 1
